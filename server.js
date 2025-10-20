@@ -41,3 +41,45 @@ app.post("/noja-upload", async (req, res) => {
 
 app.get("/", (_, res) => res.send("✅ Noja-upload-server toimii"));
 app.listen(process.env.PORT || 3000, () => console.log("Server running"));
+import express from "express";
+const app = express();
+
+app.use(express.json());
+
+// 🔹 1. Perusreitti: näyttää että palvelin toimii
+app.get("/", (req, res) => {
+  res.send("✅ Noja-upload-server toimii");
+});
+
+// 🔹 2. Health check: näkyy selaimessa myös /noja-upload osoitteessa
+app.get("/noja-upload", (req, res) => {
+  res.json({
+    ok: true,
+    message: "Käytä POST-metodia lähetykseen tähän reittiin.",
+    hint: "POST /noja-upload { invoiceId: 'TESTI_123' }",
+  });
+});
+
+// 🔹 3. Pääreitti POST-pyyntöihin Lovablesta tai Supabasesta
+app.post("/noja-upload", async (req, res) => {
+  try {
+    const { invoiceId } = req.body;
+    console.log("📦 Saapui pyyntö Noja-uploadille:", invoiceId);
+
+    // Tässä kohtaa myöhemmin lisätään SFTP-lähetys Nojalle.
+    // Nyt vain simuloidaan onnistunut testivastaus:
+    res.json({
+      ok: true,
+      invoiceId: invoiceId || "TESTI_001",
+      message: "✅ Render vastasi oikein ja yhteys toimii.",
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("❌ Virhe POST /noja-upload:", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// 🔹 4. Käynnistä palvelin Renderin oletusportissa
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
