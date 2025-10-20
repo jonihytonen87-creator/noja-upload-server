@@ -1,0 +1,11 @@
+{
+  "name": "noja-upload-server",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ssh2-sftp-client": "^10.0.3"
+  }
+}
