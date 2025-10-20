@@ -41,8 +41,6 @@ app.post("/noja-upload", async (req, res) => {
 
 app.get("/", (_, res) => res.send("✅ Noja-upload-server toimii"));
 app.listen(process.env.PORT || 3000, () => console.log("Server running"));
-import express from "express";
-const app = express();
 
 app.use(express.json());
 
