@@ -1,9 +1,25 @@
+// ESM-versio (package.json: "type": "module")
 import express from "express";
 import SFTPClient from "ssh2-sftp-client";
 
 const app = express();
 app.use(express.json());
 
+// GET / – terveystarkastus
+app.get("/", (_req, res) => {
+  res.send("✅ Noja-upload-server toimii");
+});
+
+// GET /noja-upload – näkyy selaimessa, kertoo käyttää POSTia
+app.get("/noja-upload", (_req, res) => {
+  res.json({
+    ok: true,
+    message: "Käytä POST-metodia lähetykseen tähän reittiin.",
+    hint: "POST /noja-upload { invoiceId: 'TESTI_123' }"
+  });
+});
+
+// POST /noja-upload – muodostaa Finvoice-XML:n ja lähettää SFTP:lle
 app.post("/noja-upload", async (req, res) => {
   const id = req.body?.invoiceId || `FINVOICE_TEST_${Date.now()}`;
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -17,67 +33,41 @@ app.post("/noja-upload", async (req, res) => {
 
   const sftp = new SFTPClient();
   try {
-    await sftp.connect({
-      host: process.env.NOJA_SFTP_HOST,
-      port: Number(process.env.NOJA_SFTP_PORT || 22),
-      username: process.env.NOJA_SFTP_USER,
-      password: process.env.NOJA_SFTP_PASS,
-    });
+    // 🔧 Ympäristömuuttujat (Render: Settings → Environment)
+    const host = process.env.NOJA_SFTP_HOST;              // esim. sftp.noja.fi
+    const port = Number(process.env.NOJA_SFTP_PORT || 22);// sinulla: 22765
+    const username = process.env.NOJA_SFTP_USER;          // esim. laatulaskutus
+    const password = process.env.NOJA_SFTP_PASS;          // salasana
+    const dir = process.env.NOJA_SFTP_REMOTE_DIR || "/filein";
 
-    const dir = process.env.NOJA_SFTP_REMOTE_DIR || "/invoices/out";
+    if (!host || !username || !password) {
+      return res.status(500).json({ ok: false, error: "SFTP env-muuttujat puuttuvat" });
+    }
+
+    await sftp.connect({ host, port, username, password, readyTimeout: 20000 });
+
+    // Luo kohdehakemisto tarvittaessa (ei haittaa, jos on jo olemassa)
     try { await sftp.mkdir(dir, true); } catch {}
+
     const remotePath = `${dir}/${id}.xml`;
-
     await sftp.put(Buffer.from(xml, "utf8"), remotePath);
-    const recent = await sftp.list(dir);
 
-    res.json({ ok: true, remotePath, count: recent.length });
+    // Listaa viimeiset tiedostot kuittaukseksi
+    const list = await sftp.list(dir);
+    const recent = list
+      .sort((a, b) => (b.modifyTime || 0) - (a.modifyTime || 0))
+      .slice(0, 5)
+      .map(f => ({ name: f.name, size: f.size, mtime: f.modifyTime }));
+
+    res.json({ ok: true, remotePath, recent });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    console.error("❌ SFTP-virhe:", err);
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
   } finally {
     try { await sftp.end(); } catch {}
   }
 });
 
-app.get("/", (_, res) => res.send("✅ Noja-upload-server toimii"));
-app.listen(process.env.PORT || 3000, () => console.log("Server running"));
-
-app.use(express.json());
-
-// 🔹 1. Perusreitti: näyttää että palvelin toimii
-app.get("/", (req, res) => {
-  res.send("✅ Noja-upload-server toimii");
-});
-
-// 🔹 2. Health check: näkyy selaimessa myös /noja-upload osoitteessa
-app.get("/noja-upload", (req, res) => {
-  res.json({
-    ok: true,
-    message: "Käytä POST-metodia lähetykseen tähän reittiin.",
-    hint: "POST /noja-upload { invoiceId: 'TESTI_123' }",
-  });
-});
-
-// 🔹 3. Pääreitti POST-pyyntöihin Lovablesta tai Supabasesta
-app.post("/noja-upload", async (req, res) => {
-  try {
-    const { invoiceId } = req.body;
-    console.log("📦 Saapui pyyntö Noja-uploadille:", invoiceId);
-
-    // Tässä kohtaa myöhemmin lisätään SFTP-lähetys Nojalle.
-    // Nyt vain simuloidaan onnistunut testivastaus:
-    res.json({
-      ok: true,
-      invoiceId: invoiceId || "TESTI_001",
-      message: "✅ Render vastasi oikein ja yhteys toimii.",
-      timestamp: new Date().toISOString(),
-    });
-  } catch (err) {
-    console.error("❌ Virhe POST /noja-upload:", err);
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
-// 🔹 4. Käynnistä palvelin Renderin oletusportissa
+// Käynnistys (Render antaa PORT-ympäristömuuttujan)
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
